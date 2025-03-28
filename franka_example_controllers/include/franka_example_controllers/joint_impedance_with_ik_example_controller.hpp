@@ -24,6 +24,14 @@
 #include "franka_semantic_components/franka_cartesian_pose_interface.hpp"
 #include "franka_semantic_components/franka_robot_model.hpp"
 
+
+#include <rclcpp/rclcpp.hpp>
+#include <tuple>
+#include "geometry_msgs/msg/twist.hpp"
+#include <std_msgs/msg/bool.hpp>
+#include <geometry_msgs/msg/pose_stamped.hpp>
+#include <geometry_msgs/msg/wrench_stamped.hpp>
+
 using CallbackReturn = rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
 
 namespace franka_example_controllers {
@@ -47,9 +55,37 @@ class JointImpedanceWithIKExampleController : public controller_interface::Contr
   CallbackReturn on_configure(const rclcpp_lifecycle::State& previous_state) override;
   CallbackReturn on_activate(const rclcpp_lifecycle::State& previous_state) override;
   CallbackReturn on_deactivate(const rclcpp_lifecycle::State& previous_state) override;
+  
+  void omegaButtonCallback(std_msgs::msg::Bool::SharedPtr msg);
+  void FdEEPoseCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg);
+  void FdEETwistCallback(const geometry_msgs::msg::Twist::SharedPtr msg);
+  void netFTCallback(const geometry_msgs::msg::WrenchStamped::SharedPtr msg);
 
  private:
   void update_joint_states();
+
+  geometry_msgs::msg::PoseStamped fd_ee_pose_;
+  geometry_msgs::msg::Twist fd_ee_twist_;
+  
+  Eigen::Vector3d com_{-0.0, -0.0, -0.0};
+  double mass_ = 0.87;
+  double gravity_ = 9.81;
+
+  geometry_msgs::msg::WrenchStamped netft_raw_;
+  geometry_msgs::msg::WrenchStamped netft_comp_;
+  Eigen::Vector3d pos_org_;
+  
+  Eigen::Quaterniond ori_org_;
+
+  Eigen::Vector3d prev_target_position_;
+  
+  Eigen::Vector3d post_org_;
+  Eigen::Quaterniond orit_org_;
+  Eigen::Vector3d angt_org_;
+  bool is_gripper_loaded_ = true;
+
+  double button_init_ = 1;
+  bool button_check_{false};
 
   /**
    * @brief Calculates the new pose based on the initial pose.
@@ -118,5 +154,32 @@ class JointImpedanceWithIKExampleController : public controller_interface::Contr
   std::vector<double> joint_positions_current_{0, 0, 0, 0, 0, 0, 0};
   std::vector<double> joint_velocities_current_{0, 0, 0, 0, 0, 0, 0};
   std::vector<double> joint_efforts_current_{0, 0, 0, 0, 0, 0, 0};
+
+  double dt_{0.001};
+  double cutoff_freq_ = 1;
+  double ramp_up_duration_{0.01};
+  double pos_scale_{0.5};
+  double rot_scale_{0.3};
+
+
+  rclcpp::Time t_ramp_start_;
+  /// 전역 또는 클래스 멤버 변수
+  Eigen::Vector3d cumulative_offset = Eigen::Vector3d::Zero();
+  Eigen::Vector3d cumulative_orientation_offset = Eigen::Vector3d::Zero();
+  // ramp up이 진행 중일 때 쓰일 현재 ramp ratio
+  double ramp_ratio_{0.0};
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr omegaButton_sub_;
+  rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr fd_ee_pose_sub_;
+  rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr fd_ee_twist_sub_;
+  rclcpp::Subscription<geometry_msgs::msg::WrenchStamped>::SharedPtr netft_sub_;
+
+
+  //! Publishers
+  rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr ee_pose_pub_;
+  rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr ee_poset_pub_;
+  rclcpp::Publisher<geometry_msgs::msg::WrenchStamped>::SharedPtr netft_comp_pub_;
+
+
+
 };
 }  // namespace franka_example_controllers

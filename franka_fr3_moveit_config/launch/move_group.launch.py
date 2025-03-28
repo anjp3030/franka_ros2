@@ -96,16 +96,30 @@ def generate_launch_description():
     kinematics_yaml = load_yaml(
         'franka_fr3_moveit_config', 'config/kinematics.yaml')
 
+    ompl_planning_pipeline_config = {
+        'move_group': {
+            'planning_plugin': 'ompl_interface/OMPLPlanner',
+        }
+    }
+
+    # Controller Manager Parameter
+    controller_manager_param = {
+        "moveit_controller_manager": "moveit_simple_controller_manager/MoveItSimpleControllerManager"
+    }
+
+    # Move Group Node
     run_move_group_node = Node(
         package='moveit_ros_move_group',
         executable='move_group',
+        output='screen',
         parameters=[
             robot_description,
             robot_description_semantic,
             kinematics_yaml,
+            ompl_planning_pipeline_config,
+            controller_manager_param
         ],
     )
-
     return LaunchDescription(
         [
             db_arg,
