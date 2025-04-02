@@ -76,35 +76,16 @@ Eigen::Quaterniond RotationToQuaternion(const Eigen::Quaterniond& current_orient
 Eigen::Quaterniond roll_quaternion(Eigen::AngleAxisd(current_angle.x(), Eigen::Vector3d::UnitZ()));
 Eigen::Quaterniond pitch_quaternion(Eigen::AngleAxisd(current_angle.y(), Eigen::Vector3d::UnitY()));
 Eigen::Quaterniond yaw_quaternion(Eigen::AngleAxisd(current_angle.z(), Eigen::Vector3d::UnitX()));
-Eigen::Quaterniond compensate_quaternion(Eigen::AngleAxisd(M_PI, Eigen::Vector3d::UnitZ()));
 // 2. 오일러 각 회전 쿼터니언들을 곱해 최종 회전 쿼터니언 계산 (순서: Yaw -> Pitch -> Roll)
-Eigen::Quaterniond euler_rotation = yaw_quaternion * pitch_quaternion * roll_quaternion;
+Eigen::Quaterniond euler_rotation = roll_quaternion * pitch_quaternion * yaw_quaternion;
 
 // 3. 기존 쿼터니언에 새로운 회전 쿼터니언을 곱해 추가 회전 적용
 Eigen::Quaterniond new_orientation = current_orientation * euler_rotation;
-// Eigen::Vector3d euler_angles = new_orientation.toRotationMatrix().eulerAngles(2, 1, 0);  // ZYX 순서
-// std::cout << "Yaw (Z): " << roll * 180.0 / M_PI << "° "
-//       << "Pitch (Y): " << pitch * 180.0 / M_PI << "° "
-//       << "Roll (X): " << yaw * 180.0 / M_PI << "° " << std::endl;
+
 // 4. 정규화 후 반환
 return new_orientation.normalized();
 }
 
-
-Eigen::Vector3d JointImpedanceWithIKExampleController::compute_new_position() {
-  double radius = 0.1;
-
-  double angle = M_PI / 4 * (1 - std::cos(M_PI / 5.0 * elapsed_time_));
-
-  double delta_x = radius * std::sin(angle);
-  double delta_z = radius * (std::cos(angle) - 1);
-
-  Eigen::Vector3d new_position = position_;
-  new_position.x() -= delta_x;
-  new_position.z() -= delta_z;
-
-  return new_position;
-}
 
 std::shared_ptr<moveit_msgs::srv::GetPositionIK::Request>
 JointImpedanceWithIKExampleController::create_ik_service_request(
@@ -264,14 +245,8 @@ controller_interface::return_type JointImpedanceWithIKExampleController::update(
     initial_robot_time_ = state_interfaces_.back().get_value();
     elapsed_time_ = 0.0;
     initialization_flag_ = false;
-<<<<<<< HEAD
-  } else {
-    robot_time_ = state_interfaces_.back().get_value();
-    elapsed_time_ = robot_time_ - initial_robot_time_;
-=======
     pos_org_ = position_;
     ori_org_ = orientation_;
->>>>>>> 16219e2 (add Teleoperation for omega7)
   }
   // else {
   //   // Get initial orientation and translation
