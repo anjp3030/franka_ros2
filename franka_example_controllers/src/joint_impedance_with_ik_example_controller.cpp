@@ -22,6 +22,7 @@
 #include <deque> 
 
 #include <chrono>
+#include <franka_msgs/srv/set_load.hpp>  // SetLoad 서비스 메시지 헤더 추가
 
 using namespace std::chrono_literals;
 using Vector7d = Eigen::Matrix<double, 7, 1>;
@@ -66,21 +67,26 @@ void JointImpedanceWithIKExampleController::update_joint_states() {
     const auto& velocity_interface = state_interfaces_.at(23 + i);
     const auto& effort_interface = state_interfaces_.at(30 + i);
     joint_positions_current_[i] = position_interface.get_value();
+    std::cout <<"Joint position " << i << joint_positions_current_[i]<<std::endl;
+
     joint_velocities_current_[i] = velocity_interface.get_value();
     joint_efforts_current_[i] = effort_interface.get_value();
   }
 }
+
 Eigen::Quaterniond RotationToQuaternion(const Eigen::Quaterniond& current_orientation,
   const Eigen::Vector3d& current_angle) {
 // 1. 오일러 각을 사용해 회전 쿼터니언 생성 (ZYX 순서로 적용: Yaw -> Pitch -> Roll)
-Eigen::Quaterniond roll_quaternion(Eigen::AngleAxisd(current_angle.x(), Eigen::Vector3d::UnitZ()));
-Eigen::Quaterniond pitch_quaternion(Eigen::AngleAxisd(current_angle.y(), Eigen::Vector3d::UnitY()));
-Eigen::Quaterniond yaw_quaternion(Eigen::AngleAxisd(current_angle.z(), Eigen::Vector3d::UnitX()));
+
+Eigen::Quaterniond yaw_quaternion(Eigen::AngleAxisd(-current_angle.x(), Eigen::Vector3d::UnitZ()));
+Eigen::Quaterniond pitch_quaternion(Eigen::AngleAxisd(-current_angle.y(), Eigen::Vector3d::UnitY()));
+Eigen::Quaterniond roll_quaternion(Eigen::AngleAxisd(current_angle.z(), Eigen::Vector3d::UnitX()));
+
 // 2. 오일러 각 회전 쿼터니언들을 곱해 최종 회전 쿼터니언 계산 (순서: Yaw -> Pitch -> Roll)
-Eigen::Quaterniond euler_rotation = roll_quaternion * pitch_quaternion * yaw_quaternion;
+Eigen::Quaterniond euler_rotation = yaw_quaternion * pitch_quaternion * roll_quaternion;
 
 // 3. 기존 쿼터니언에 새로운 회전 쿼터니언을 곱해 추가 회전 적용
-Eigen::Quaterniond new_orientation = current_orientation * euler_rotation;
+Eigen::Quaterniond new_orientation = euler_rotation * current_orientation;
 
 // 4. 정규화 후 반환
 return new_orientation.normalized();
@@ -125,34 +131,11 @@ Vector7d JointImpedanceWithIKExampleController::compute_torque_command(
   std::array<double, 7> coriolis_array = franka_robot_model_->getCoriolisForceVector();
   Vector7d coriolis(coriolis_array.data());
 
-
-  double gripper_mass = 6.3;  // 그리퍼 무게 (예: 1.3kg)
-  Eigen::Vector3d gripper_center_of_mass(0.0, 0.0,- 0.06);  // 무게중심 위치 (예: z축으로 60cm)
-
-  // 중력 가속도 벡터
-  Eigen::Vector3d gravity_acceleration(0.0, 0.0, -9.81);
-
-  // 그리퍼에 의한 추가 중력 토크 계산
-  Eigen::Matrix<double, 7, 1> gravity_torque_gripper;
-  {
-    std::array<double, 42> jacobian_array = franka_robot_model_->getZeroJacobian(franka::Frame::kEndEffector);
-    Eigen::Map<Eigen::Matrix<double, 6, 7>> jacobian(jacobian_array.data());
-
-    Eigen::Vector3d gripper_force = gripper_mass * gravity_acceleration;
-    Eigen::Vector3d gripper_torque = gripper_center_of_mass.cross(gripper_force);
-
-    Eigen::Matrix<double, 6, 1> wrench;
-    wrench << gripper_force, gripper_torque;
-
-    gravity_torque_gripper = jacobian.transpose() * wrench;
-  }
-
-  const double kAlpha = 0.999;
+  const double kAlpha = 0.99;
   dq_filtered_ = (1 - kAlpha) * dq_filtered_ + kAlpha * joint_velocities_current;
   Vector7d q_error = joint_positions_desired - joint_positions_current;
-  // Vector7d tau_d_calculated =  coriolis;
   Vector7d tau_d_calculated = 
-      k_gains_.cwiseProduct(q_error) - d_gains_.cwiseProduct(dq_filtered_) + coriolis - gravity_torque_gripper;
+      k_gains_.cwiseProduct(q_error) - d_gains_.cwiseProduct(dq_filtered_) + coriolis;
 
   return tau_d_calculated;
 }
@@ -165,10 +148,15 @@ void JointImpedanceWithIKExampleController::omegaButtonCallback(const std_msgs::
 
 
 void JointImpedanceWithIKExampleController::FdEEPoseCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg){
-this->fd_ee_pose_ = *msg;
+  this->fd_ee_pose_ = *msg;
 }
 void JointImpedanceWithIKExampleController::FdEETwistCallback(const geometry_msgs::msg::Twist::SharedPtr msg){
   this->fd_ee_twist_ = *msg; 
+}
+
+void JointImpedanceWithIKExampleController::homeButtonCallback(
+  const std_msgs::msg::Bool::SharedPtr msg) {
+  home_button_check_ = msg->data;
 }
 
 void JointImpedanceWithIKExampleController::netFTCallback(
@@ -187,11 +175,9 @@ void JointImpedanceWithIKExampleController::netFTCallback(
   }else{
     R_base_ee = orientation_.toRotationMatrix();;
   }
-  // Eigen::Matrix3d R_base_ee = orientation_.toRotationMatrix();;
-  // std::cout<<R_base_ee * R_base_ee.transpose()<<std::endl;
+
   Eigen::Vector3d g_base(0.0, 0.0, -gravity_);
 
-  // Eigen::Matrix3d R_z = Eigen::AngleAxisd(M_PI/4, Eigen::Vector3d::UnitZ()).toRotationMatrix();
 
   Eigen::Vector3d g_ee = R_base_ee.transpose() * g_base;
   Eigen::Vector3d Fgo = mass_ * g_base;
@@ -215,9 +201,7 @@ void JointImpedanceWithIKExampleController::netFTCallback(
 
   Eigen::Vector3d F_comp = F_meas + Fg + Fgo;
   Eigen::Vector3d T_comp = T_meas + Tg + Tgo;
-  // std::cout<<"R :"<< R_base_ee <<std::endl;
-  // std::cout<<"Fg :"<< Fg <<std::endl;
-  // std::cout<<"Fgo :"<< Fgo <<std::endl;
+
 
 
 
@@ -236,24 +220,61 @@ void JointImpedanceWithIKExampleController::netFTCallback(
 }
 
 controller_interface::return_type JointImpedanceWithIKExampleController::update(
-    const rclcpp::Time& /*time*/,
+    const rclcpp::Time& time,
     const rclcpp::Duration& /*period*/) {
   if (initialization_flag_) {
     std::tie(orientation_, position_) =
         franka_cartesian_pose_->getCurrentOrientationAndTranslation();
 
     initial_robot_time_ = state_interfaces_.back().get_value();
-    elapsed_time_ = 0.0;
     initialization_flag_ = false;
     pos_org_ = position_;
     ori_org_ = orientation_;
   }
-  // else {
-  //   // Get initial orientation and translation
-  //   std::tie(orientation_, position_) =
-  //       franka_cartesian_pose_->getCommandedOrientationAndTranslation();
-  // }
+  
   update_joint_states();
+    // —— 1) HOME 모드 진입 초기화 ——
+    if (home_button_check_) {
+      if (home_button_init_ == 0) {
+        RCLCPP_INFO(get_node()->get_logger(), "Entering HOME mode");
+        home_button_init_ = 1;
+        // 시작 시점 저장
+        home_start_time_ = time;
+        // 현재 관절값 저장
+        for (int i = 0; i < num_joints_; ++i) {
+          home_start_positions_[i] = joint_positions_current_[i];
+        }
+      }
+      // 경과 시간 계산
+      double elapsed = (time - home_start_time_).seconds();
+      double alpha = std::min(elapsed / home_move_duration_, 1.0);
+  
+      // 보간된 목표 위치 계산
+      Vector7d desired;
+      for (int i = 0; i < num_joints_; ++i) {
+        double start = home_start_positions_[i];
+        double goal  = home_positions_[i];
+        desired(i) = start + (goal - start) * alpha;
+      }
+  
+      // 토크 계산 & 커맨드
+      Vector7d current_pos(joint_positions_current_.data());
+      Vector7d current_vel(joint_velocities_current_.data());
+      Vector7d tau = compute_torque_command(desired, current_pos, current_vel);
+      for (int i = 0; i < num_joints_; ++i) {
+        command_interfaces_[i].set_value(tau(i));
+      }
+  
+      // α == 1 이면 모드 유지 혹은 자동 종료 (원하면 false로 리셋)
+      return controller_interface::return_type::OK;
+    } 
+    // 버튼 떼면 홈 모드 종료 플래그 리셋
+    else if (home_button_init_ == 1) {
+      RCLCPP_INFO(get_node()->get_logger(), "Exiting HOME mode");
+      home_button_init_ = 0;
+      initialization_flag_ = true;
+
+    }
 
   Eigen::Vector3d final_position = position_;
   Eigen::Quaterniond final_orientation = orientation_;
@@ -450,7 +471,11 @@ CallbackReturn JointImpedanceWithIKExampleController::on_configure(
     get_node()->create_subscription<std_msgs::msg::Bool>(
       "fd/button_state", rclcpp::SystemDefaultsQoS(),
       std::bind(&JointImpedanceWithIKExampleController::omegaButtonCallback, this, std::placeholders::_1));
-  
+  home_button_sub_ =
+    get_node()->create_subscription<std_msgs::msg::Bool>(
+      "home_button", rclcpp::SystemDefaultsQoS(),
+      std::bind(&JointImpedanceWithIKExampleController::homeButtonCallback,
+                this, std::placeholders::_1));
   ee_pose_pub_ =
     get_node()->create_publisher<geometry_msgs::msg::PoseStamped>(
       "ee_pose", rclcpp::SystemDefaultsQoS());
@@ -458,6 +483,7 @@ CallbackReturn JointImpedanceWithIKExampleController::on_configure(
     get_node()->create_publisher<geometry_msgs::msg::PoseStamped>(
       "ee_poset", rclcpp::SystemDefaultsQoS());
           
+ 
   
 
   // 2) 보상된 Wrench 퍼블리셔
@@ -465,6 +491,17 @@ CallbackReturn JointImpedanceWithIKExampleController::on_configure(
       get_node()->create_publisher<geometry_msgs::msg::WrenchStamped>(
           "netft_data_compensated",
           rclcpp::SystemDefaultsQoS());
+
+  home_positions_ = { 
+    0,
+    -M_PI_4, 
+    0, 
+    -3 * M_PI_4, 
+    0, 
+    M_PI_2, 
+    M_PI_4
+  };
+  elapsed_time_ = 0.0;        
 
   button_check_ = false;
   prev_target_position_ = Eigen::Vector3d::Zero();

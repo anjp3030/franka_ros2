@@ -51,6 +51,7 @@ class JointImpedanceWithIKExampleController : public controller_interface::Contr
       const override;
   controller_interface::return_type update(const rclcpp::Time& time,
                                            const rclcpp::Duration& period) override;
+
   CallbackReturn on_init() override;
   CallbackReturn on_configure(const rclcpp_lifecycle::State& previous_state) override;
   CallbackReturn on_activate(const rclcpp_lifecycle::State& previous_state) override;
@@ -60,7 +61,7 @@ class JointImpedanceWithIKExampleController : public controller_interface::Contr
   void FdEEPoseCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg);
   void FdEETwistCallback(const geometry_msgs::msg::Twist::SharedPtr msg);
   void netFTCallback(const geometry_msgs::msg::WrenchStamped::SharedPtr msg);
-
+  void homeButtonCallback(std_msgs::msg::Bool::SharedPtr msg);
  private:
   void update_joint_states();
 
@@ -134,8 +135,9 @@ class JointImpedanceWithIKExampleController : public controller_interface::Contr
   bool initialization_flag_{true};
 
   std::string arm_id_;
-  bool is_gripper_loaded_ = true;
   std::string robot_description_;
+  
+  double trajectory_period_{0.001};
 
   double elapsed_time_{0.0};
   double initial_robot_time_{0.0};
@@ -161,6 +163,13 @@ class JointImpedanceWithIKExampleController : public controller_interface::Contr
   double pos_scale_{0.5};
   double rot_scale_{0.3};
 
+  // 홈 모드 관련
+  bool   home_button_check_{false};
+  int    home_button_init_{0};
+  rclcpp::Time   home_start_time_;
+  std::array<double,7> home_start_positions_;
+  std::array<double,7> home_positions_;
+  double home_move_duration_{2.0};  // 예: 5초에 걸쳐 이동
 
   rclcpp::Time t_ramp_start_;
   /// 전역 또는 클래스 멤버 변수
@@ -169,6 +178,8 @@ class JointImpedanceWithIKExampleController : public controller_interface::Contr
   // ramp up이 진행 중일 때 쓰일 현재 ramp ratio
   double ramp_ratio_{0.0};
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr omegaButton_sub_;
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr home_button_sub_;
+
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr fd_ee_pose_sub_;
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr fd_ee_twist_sub_;
   rclcpp::Subscription<geometry_msgs::msg::WrenchStamped>::SharedPtr netft_sub_;

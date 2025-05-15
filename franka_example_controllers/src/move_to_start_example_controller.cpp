@@ -58,7 +58,8 @@ controller_interface::return_type MoveToStartExampleController::update(
     dq_filtered_ = (1 - kAlpha) * dq_filtered_ + kAlpha * dq_;
     Vector7d tau_d_calculated =
         k_gains_.cwiseProduct(q_desired - q_) + d_gains_.cwiseProduct(-dq_filtered_);
-    for (int i = 0; i < 7; ++i) {
+        std::cout<<"tau_d :"<< tau_d_calculated <<std::endl;
+        for (int i = 0; i < 7; ++i) {
       command_interfaces_[i].set_value(tau_d_calculated(i));
     }
   } else {

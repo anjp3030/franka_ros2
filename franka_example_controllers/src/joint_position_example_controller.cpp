@@ -29,32 +29,6 @@ using Vector7d = Eigen::Matrix<double, 7, 1>;
 namespace franka_example_controllers {
 
 controller_interface::InterfaceConfiguration
-<<<<<<< HEAD
-JointPositionExampleController::command_interface_configuration() const {
-  controller_interface::InterfaceConfiguration config;
-  config.type = controller_interface::interface_configuration_type::INDIVIDUAL;
-  for (int i = 1; i <= num_joints; ++i) {
-    config.names.push_back(arm_id_ + "_joint" + std::to_string(i) + "/position");
-  }
-  return config;
-}
-
-controller_interface::InterfaceConfiguration
-JointPositionExampleController::state_interface_configuration() const {
-  controller_interface::InterfaceConfiguration config;
-  config.type = controller_interface::interface_configuration_type::INDIVIDUAL;
-
-  for (int i = 1; i <= num_joints; ++i) {
-    config.names.push_back(arm_id_ + "_joint" + std::to_string(i) + "/position");
-  }
-
-  // add the robot time interface
-  if (!is_gazebo_) {
-    config.names.push_back(arm_id_ + "/robot_time");
-  }
-
-  return config;
-=======
   JointPositionExampleController::command_interface_configuration() const {
     controller_interface::InterfaceConfiguration config;
     config.type = controller_interface::interface_configuration_type::INDIVIDUAL;
@@ -207,7 +181,6 @@ netft_comp_.wrench.torque.z = T_comp.z();
 
 // 7. 보정된 값 퍼블리시
 netft_comp_pub_->publish(netft_comp_);
->>>>>>> 16219e2 (add Teleoperation for omega7)
 }
 
 controller_interface::return_type JointPositionExampleController::update(
@@ -215,31 +188,13 @@ controller_interface::return_type JointPositionExampleController::update(
     const rclcpp::Duration& /*period*/) {
     if (initialization_flag_) {
       std::tie(orientation_, position_) =
-          franka_cartesian_pose_->getInitialOrientationAndTranslation();
+          franka_cartesian_pose_->getCurrentOrientationAndTranslation();
       initialization_flag_ = false;
       pos_org_ = position_;
       ori_org_ = orientation_;
     }
-<<<<<<< HEAD
-    initialization_flag_ = false;
-    if (!is_gazebo_) {
-      initial_robot_time_ = state_interfaces_.back().get_value();
-    }
-    elapsed_time_ = 0.0;
-  } else {
-    if (!is_gazebo_) {
-      robot_time_ = state_interfaces_.back().get_value();
-      elapsed_time_ = robot_time_ - initial_robot_time_;
-    } else {
-      elapsed_time_ += trajectory_period_;
-    }
-  }
-
-  double delta_angle = M_PI / 16 * (1 - std::cos(M_PI / 5.0 * elapsed_time_)) * 0.2;
-=======
 
     update_joint_states();
->>>>>>> 16219e2 (add Teleoperation for omega7)
 
     Eigen::Vector3d final_position = position_;
     Eigen::Quaterniond final_orientation = orientation_;
