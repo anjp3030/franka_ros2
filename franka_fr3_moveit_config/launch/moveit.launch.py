@@ -218,6 +218,8 @@ def generate_launch_description():
         package='joint_state_publisher',
         executable='joint_state_publisher',
         name='joint_state_publisher',
+        namespace=namespace,
+
         parameters=[
             {'source_list': ['franka/joint_states', 'fr3_gripper/joint_states'], 'rate': 30}],
     )

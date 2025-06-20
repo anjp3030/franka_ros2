@@ -67,12 +67,13 @@ void JointImpedanceWithIKExampleController::update_joint_states() {
     const auto& velocity_interface = state_interfaces_.at(23 + i);
     const auto& effort_interface = state_interfaces_.at(30 + i);
     joint_positions_current_[i] = position_interface.get_value();
-    std::cout <<"Joint position " << i << joint_positions_current_[i]<<std::endl;
+    // std::cout <<"Joint position " << i << joint_positions_current_[i]<<std::endl;
 
     joint_velocities_current_[i] = velocity_interface.get_value();
     joint_efforts_current_[i] = effort_interface.get_value();
   }
 }
+
 
 Eigen::Quaterniond RotationToQuaternion(const Eigen::Quaterniond& current_orientation,
   const Eigen::Vector3d& current_angle) {
@@ -92,6 +93,25 @@ Eigen::Quaterniond new_orientation = euler_rotation * current_orientation;
 return new_orientation.normalized();
 }
 
+void JointImpedanceWithIKExampleController::init_services() {
+  replay_ready_service_ = get_node()->create_service<std_srvs::srv::Trigger>(
+      "replay_ready", 
+      std::bind(&JointImpedanceWithIKExampleController::replayReadyCallback, this, std::placeholders::_1, std::placeholders::_2)
+  );
+}
+void JointImpedanceWithIKExampleController::replayReadyCallback(
+  const std::shared_ptr<std_srvs::srv::Trigger::Request> req,
+  std::shared_ptr<std_srvs::srv::Trigger::Response> res) 
+{
+  (void)req;
+  if (reached_first_position_) {
+      res->success = true;
+      res->message = "Robot has reached first replay position.";
+  } else {
+      res->success = false;
+      res->message = "Robot has NOT reached first replay position.";
+  }
+}
 
 std::shared_ptr<moveit_msgs::srv::GetPositionIK::Request>
 JointImpedanceWithIKExampleController::create_ik_service_request(
@@ -159,6 +179,28 @@ void JointImpedanceWithIKExampleController::homeButtonCallback(
   home_button_check_ = msg->data;
 }
 
+void JointImpedanceWithIKExampleController::replayJointStateCallback(
+  const sensor_msgs::msg::JointState::SharedPtr msg) 
+{
+  if (msg->position.size() >= 7) {
+    replay_joint_positions_.resize(7);
+    for (size_t i = 0; i < 7; ++i) {
+      replay_joint_positions_[i] = msg->position[i];
+    }
+    has_replay_msg_ = true;
+    last_replay_msg_time_ = get_node()->now();  // 마지막 받은 시각
+  }
+}
+
+void JointImpedanceWithIKExampleController::onFirstReplayJointState(const std::vector<double>& joints) {
+  first_replay_joint_positions_ = joints;
+  replay_start_positions_ = joint_positions_current_;  // store current as start!
+  move_to_first_replay_pose_ = true;
+  reached_first_position_ = false;
+  replay_move_start_time_ = get_node()->now();
+}
+
+
 void JointImpedanceWithIKExampleController::netFTCallback(
   const geometry_msgs::msg::WrenchStamped::SharedPtr msg) {
 
@@ -170,11 +212,10 @@ void JointImpedanceWithIKExampleController::netFTCallback(
 
   netft_raw_ = *msg;
   Eigen::Matrix3d R_base_ee;
-  if (initialization_flag_) {
-    R_base_ee = Eigen::Matrix3d::Identity();
-  }else{
-    R_base_ee = orientation_.toRotationMatrix();;
-  }
+
+  
+  R_base_ee = orientation_.toRotationMatrix();;
+  
 
   Eigen::Vector3d g_base(0.0, 0.0, -gravity_);
 
@@ -275,6 +316,58 @@ controller_interface::return_type JointImpedanceWithIKExampleController::update(
       initialization_flag_ = true;
 
     }
+    // ------------- MOVE TO FIRST REPLAY POSITION MODE -------------
+    if (move_to_first_replay_pose_) {
+      // Only setup at the start of interpolation!
+      double elapsed = (time - replay_move_start_time_).seconds();
+      double alpha = std::min(elapsed / replay_move_duration_, 1.0);
+    
+      Vector7d desired;
+      for (int i = 0; i < num_joints_; ++i) {
+        double start = replay_start_positions_[i];
+        double goal  = first_replay_joint_positions_[i];
+        desired(i) = start + (goal - start) * alpha;
+      }
+    
+      Vector7d current_pos(joint_positions_current_.data());
+      Vector7d current_vel(joint_velocities_current_.data());
+      Vector7d tau = compute_torque_command(desired, current_pos, current_vel);
+      for (int i = 0; i < num_joints_; ++i) {
+        command_interfaces_[i].set_value(tau(i));
+      }
+    
+      // Check if close enough or finished
+      Vector7d goal(first_replay_joint_positions_.data());
+      if ((current_pos - goal).norm() < replay_pose_tolerance_ || alpha >= 1.0) {
+        reached_first_position_ = true;
+        move_to_first_replay_pose_ = false;
+        initialization_flag_ = true;
+        RCLCPP_INFO(get_node()->get_logger(), "Reached first replay pose.");
+      }
+      return controller_interface::return_type::OK;
+    }
+
+    if (has_replay_msg_ && reached_first_position_) {
+      // Use replay_joint_positions_ as your current or desired joints
+      // Example: set desired position for impedance control
+      Vector7d replay_joint_positions_eigen(replay_joint_positions_.data());
+      Vector7d joint_positions_current_eigen(joint_positions_current_.data());
+      Vector7d joint_velocities_current_eigen(joint_velocities_current_.data());
+      auto tau_d_calculated = compute_torque_command(
+          replay_joint_positions_eigen, joint_positions_current_eigen, joint_velocities_current_eigen);
+    
+      for (int i = 0; i < num_joints_; i++) {
+        command_interfaces_[i].set_value(tau_d_calculated(i));
+      }
+      initialization_flag_ = true;
+      if ((get_node()->now() - last_replay_msg_time_).seconds() > 0.05) {
+        has_replay_msg_ = false;
+        RCLCPP_INFO(get_node()->get_logger(), "Replay finished (no new joint states), normal mode.");
+      }
+
+      return controller_interface::return_type::OK;
+    }
+    
 
   Eigen::Vector3d final_position = position_;
   Eigen::Quaterniond final_orientation = orientation_;
@@ -451,7 +544,7 @@ CallbackReturn JointImpedanceWithIKExampleController::on_configure(
     }
     RCLCPP_INFO(get_node()->get_logger(), "service not available, waiting again...");
   }
-
+  
   fd_ee_pose_sub_ =
     get_node()->create_subscription<geometry_msgs::msg::PoseStamped>(
       "fd/ee_pose", rclcpp::SystemDefaultsQoS(),
@@ -462,6 +555,7 @@ CallbackReturn JointImpedanceWithIKExampleController::on_configure(
       "fd/ee_twist", rclcpp::SystemDefaultsQoS(),
       std::bind(&JointImpedanceWithIKExampleController::FdEETwistCallback, this, std::placeholders::_1));
   // 1) netft 데이터 구독
+
   netft_sub_ = get_node()->create_subscription<geometry_msgs::msg::WrenchStamped>(
     "netft_data",  // 실제 netft 데이터 토픽 이름
     rclcpp::SystemDefaultsQoS(),
@@ -471,11 +565,29 @@ CallbackReturn JointImpedanceWithIKExampleController::on_configure(
     get_node()->create_subscription<std_msgs::msg::Bool>(
       "fd/button_state", rclcpp::SystemDefaultsQoS(),
       std::bind(&JointImpedanceWithIKExampleController::omegaButtonCallback, this, std::placeholders::_1));
+
   home_button_sub_ =
     get_node()->create_subscription<std_msgs::msg::Bool>(
       "home_button", rclcpp::SystemDefaultsQoS(),
       std::bind(&JointImpedanceWithIKExampleController::homeButtonCallback,
                 this, std::placeholders::_1));
+
+  replay_jointstate_sub_ = get_node()->create_subscription<sensor_msgs::msg::JointState>(
+    "replay_jointstate", 
+    rclcpp::SystemDefaultsQoS(),
+    std::bind(&JointImpedanceWithIKExampleController::replayJointStateCallback, this, std::placeholders::_1));
+  
+  replay_first_jointstate_sub_ = get_node()->create_subscription<sensor_msgs::msg::JointState>(
+    "replay_first_jointstate",
+    rclcpp::SystemDefaultsQoS(),
+    [this](const sensor_msgs::msg::JointState::SharedPtr msg) {
+      if (msg->position.size() >= 7) {
+        this->onFirstReplayJointState(msg->position);
+      }
+    });                
+
+
+
   ee_pose_pub_ =
     get_node()->create_publisher<geometry_msgs::msg::PoseStamped>(
       "ee_pose", rclcpp::SystemDefaultsQoS());
@@ -531,7 +643,7 @@ CallbackReturn JointImpedanceWithIKExampleController::on_configure(
   }
 
   arm_id_ = robot_utils::getRobotNameFromDescription(robot_description_, get_node()->get_logger());
-
+  init_services();
   return CallbackReturn::SUCCESS;
 }
 

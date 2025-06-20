@@ -31,6 +31,8 @@
 #include <std_msgs/msg/bool.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <geometry_msgs/msg/wrench_stamped.hpp>
+#include <sensor_msgs/msg/joint_state.hpp>
+#include "std_srvs/srv/trigger.hpp"
 
 using CallbackReturn = rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
 
@@ -62,8 +64,15 @@ class JointImpedanceWithIKExampleController : public controller_interface::Contr
   void FdEETwistCallback(const geometry_msgs::msg::Twist::SharedPtr msg);
   void netFTCallback(const geometry_msgs::msg::WrenchStamped::SharedPtr msg);
   void homeButtonCallback(std_msgs::msg::Bool::SharedPtr msg);
+  void replayJointStateCallback(const sensor_msgs::msg::JointState::SharedPtr msg);
+
  private:
   void update_joint_states();
+  void init_services();
+  void onFirstReplayJointState(const std::vector<double>& joints) ;
+  void replayReadyCallback(
+    const std::shared_ptr<std_srvs::srv::Trigger::Request> req,
+    std::shared_ptr<std_srvs::srv::Trigger::Response> res);
 
   geometry_msgs::msg::PoseStamped fd_ee_pose_;
   geometry_msgs::msg::Twist fd_ee_twist_;
@@ -87,6 +96,21 @@ class JointImpedanceWithIKExampleController : public controller_interface::Contr
 
   double button_init_ = 1;
   bool button_check_{false};
+
+  std::vector<double> replay_joint_positions_;
+  std::atomic<bool> has_replay_msg_{false};
+  
+  std::vector<double> first_replay_joint_positions_;
+
+  bool move_to_first_replay_pose_{false};
+  std::atomic<bool> reached_first_position_{false};
+
+  double replay_pose_tolerance_ = 0.02; // radians, adjust as needed
+  rclcpp::Time replay_move_start_time_;
+  double replay_move_duration_ = 2.0; // seconds, adjust as needed
+  std::vector<double> replay_start_positions_;
+
+  rclcpp::Time last_replay_msg_time_;
 
   /**
    * @brief Calculates the new pose based on the initial pose.
@@ -184,11 +208,18 @@ class JointImpedanceWithIKExampleController : public controller_interface::Contr
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr fd_ee_twist_sub_;
   rclcpp::Subscription<geometry_msgs::msg::WrenchStamped>::SharedPtr netft_sub_;
 
+  rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr replay_jointstate_sub_;
+  rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr replay_first_jointstate_sub_;
 
   //! Publishers
   rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr ee_pose_pub_;
   rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr ee_poset_pub_;
   rclcpp::Publisher<geometry_msgs::msg::WrenchStamped>::SharedPtr netft_comp_pub_;
+
+
+  rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr replay_ready_service_;
+
+
 
 
 
