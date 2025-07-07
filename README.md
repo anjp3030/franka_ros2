@@ -1,3 +1,57 @@
+# JointImpedanceWithIKExampleController
+
+This ROS 2 controller implements joint impedance control with inverse kinematics (IK) for Franka Emika robots.  
+It is based on the [franka_example_controllers](https://github.com/frankaemika/franka_ros2) package and can be used for teleoperation, replay, and force-compensated tasks with 7-DOF robots (e.g., Franka Panda).
+
+## Features
+
+- **Joint Impedance Control**: Applies impedance control in joint space using user-configurable stiffness (`k_gains`) and damping (`d_gains`).
+- **Inverse Kinematics Service**: Uses the MoveIt! `/compute_ik` service to convert Cartesian target pose to joint angles.
+- **Teleoperation**: Receives pose and twist commands (e.g., from a haptic device or joystick) for real-time teleop.
+- **Home and Replay Modes**: Supports "Home" button and joint trajectory replay via subscribed topics.
+- **Force-Torque Compensation**: Subscribes to a NetFT sensor, applies gravity and mass compensation, and publishes compensated wrench data.
+- **Service Integration**: Service to notify when the robot reaches the first replay pose (`replay_ready`).
+- **Plug-and-Play with Franka ROS 2 and MoveIt**: Designed for easy integration with existing Franka and MoveIt setups.
+
+## Subscribed Topics
+
+- `fd/ee_pose` (`geometry_msgs/PoseStamped`): Desired end-effector pose (usually from teleoperation).
+- `fd/ee_twist` (`geometry_msgs/Twist`): Desired end-effector twist.
+- `fd/button_state` (`std_msgs/Bool`): Teleoperation button input.
+- `home_button` (`std_msgs/Bool`): Home mode button.
+- `replay_jointstate` (`sensor_msgs/JointState`): Joint positions for replay mode.
+- `replay_first_jointstate` (`sensor_msgs/JointState`): First position for replay.
+- `netft_data` (`geometry_msgs/WrenchStamped`): Force-torque sensor data.
+
+## Published Topics
+
+- `ee_pose` (`geometry_msgs/PoseStamped`): Current end-effector pose.
+- `ee_poset` (`geometry_msgs/PoseStamped`): (Optional) Another pose publisher.
+- `netft_data_compensated` (`geometry_msgs/WrenchStamped`): Gravity- and mass-compensated force-torque data.
+
+## Services
+
+- `replay_ready` (`std_srvs/Trigger`): Reports whether the robot reached the first replay pose.
+
+## Parameters
+
+- `arm_id` (string): Name prefix for the Franka robot, e.g., `panda`.
+- `load_gripper` (bool): Whether a gripper is loaded for IK calculation.
+- `k_gains` (double array): Joint stiffness gains, length = 7.
+- `d_gains` (double array): Joint damping gains, length = 7.
+
+## Dependencies
+
+- ROS 2 (tested on Humble and Rolling)
+- [franka_ros2](https://github.com/frankaemika/franka_ros2)
+- [moveit_ros2](https://moveit.ros.org/)
+- [geometry_msgs](https://github.com/ros2/common_interfaces/tree/humble/geometry_msgs)
+- [std_msgs](https://github.com/ros2/common_interfaces/tree/humble/std_msgs)
+- [sensor_msgs](https://github.com/ros2/common_interfaces/tree/humble/sensor_msgs)
+- [std_srvs](https://github.com/ros2/common_interfaces/tree/humble/std_srvs)
+
+
+
 <h1 style="font-size: 3em;">ROS 2 Integration for Franka Robotics Research Robots</h1>
 
 [![CI](https://github.com/frankaemika/franka_ros2/actions/workflows/ci.yml/badge.svg)](https://github.com/frankaemika/franka_ros2/actions/workflows/ci.yml)
