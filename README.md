@@ -1,16 +1,74 @@
 # JointImpedanceWithIKExampleController
 
 [franka_example_controllers](https://github.com/frankaemika/franka_ros2) 패키지를 기반으로 하며, 7자유도(7-DOF) 로봇(예: Franka Panda)에서 텔레오퍼레이션, 동작 재생, 힘 보상 작업 등에 사용할 수 있습니다.
-
+```
+franka_ros2/franka_example_controllers/src/joint_impedance_with_ik_example_controller.cpp
+````
 ## 주요 기능
 
 - **조인트 임피던스 제어**: 사용자 지정 강성(`k_gains`) 및 감쇠(`d_gains`) 설정값을 사용해 조인트 공간에서 임피던스 제어를 수행합니다.
-- **역기구학 서비스**: MoveIt!의 `/compute_ik` 서비스를 이용해 목표 카티시안 포즈를 조인트 각도로 변환합니다.
+```
+franka_ros2/franka_bringup/config/controllers.yaml
+```
+다음 파일에서 각 조인트에 대한 k_gain 과 d_gain을 수정할 수 
+```
+joint_impedance_with_ik_example_controller:
+  ros__parameters:
+    k_gains:
+      - 600.0
+      - 600.0
+      - 600.0
+      - 600.0
+      - 250.0
+      - 150.0
+      - 50.0
+    d_gains:
+      - 30.0
+      - 30.0
+      - 30.0
+      - 30.0
+      - 10.0
+      - 10.0
+      - 5.
+```
+- **역기구학 서비스**: MoveIt!의 `/compute_ik` 서비스를 이용해 목표 카티시안 포즈를 조인트 각도로 변환합니다.변환된 조인트 각도는 다음 함수를 통해 토크로 변환됩니다.
+```
+Vector7d JointImpedanceWithIKExampleController::compute_torque_command(
+    const Vector7d& joint_positions_desired,
+    const Vector7d& joint_positions_current,
+    const Vector7d& joint_velocities_current) {
+  std::array<double, 7> coriolis_array = franka_robot_model_->getCoriolisForceVector();
+  Vector7d coriolis(coriolis_array.data());
+
+  const double kAlpha = 0.99;
+  dq_filtered_ = (1 - kAlpha) * dq_filtered_ + kAlpha * joint_velocities_current;
+  Vector7d q_error = joint_positions_desired - joint_positions_current;
+  Vector7d tau_d_calculated = 
+      k_gains_.cwiseProduct(q_error) - d_gains_.cwiseProduct(dq_filtered_) + coriolis;
+
+  return tau_d_calculated;
+}
+
+```
 - **텔레오퍼레이션**: 실시간 텔레오퍼레이션을 위해 햅틱(Omega 7) 장치에서 받은 포즈 및 트위스트 명령을 받아 처리합니다.
-- **홈 및 재생 모드**: "Home" 버튼 지원 및 구독한 토픽을 통해 조인트 궤적 재생이 가능합니다.
 - **힘-토크 보상**: NetFT 센서로부터 데이터를 구독하고, 중력 및 질량 보상을 적용하여 보정된 렌치(wrench) 데이터를 퍼블리시합니다.
-- **서비스 연동**: 로봇이 재생(replay) 모드의 첫 번째 자세에 도달했는지 알리는 서비스(`replay_ready`)를 제공합니다.
-- **Franka ROS 2 및 MoveIt과 플러그앤플레이 통합**: 기존 Franka 및 MoveIt 환경과 쉽게 연동할 수 있도록 설계되었습니다.
+```
+netFTCallback
+```
+- **주요 홈 및 재생 모드**: "Home" 버튼 지원 및 구독한 토픽을 통해 조인트 궤적 재생이 가능합니다.
+```
+`home_button` (`std_msgs/Bool`)
+```
+홈 모드 버튼을 누르면 홈으로 움직입니다.
+```
+`replay_first_jointstate` (`sensor_msgs/JointState`)
+```
+ replay를 하기 위해 첫 위치로 움직인 후 service를 응답하여 Gui에서 나머지 위치를 구독하게 합니다. 
+
+```
+`replay_jointstate` (`sensor_msgs/JointState`)
+```
+나머지 jointstate를 받아 replay를 실행합니다. 
 
 ## 구독하는 토픽
 
