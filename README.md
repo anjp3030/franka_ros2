@@ -1,54 +1,55 @@
 # JointImpedanceWithIKExampleController
 
-This ROS 2 controller implements joint impedance control with inverse kinematics (IK) for Franka Emika robots.  
-It is based on the [franka_example_controllers](https://github.com/frankaemika/franka_ros2) package and can be used for teleoperation, replay, and force-compensated tasks with 7-DOF robots (e.g., Franka Panda).
+이 ROS 2 컨트롤러는 Franka Emika 로봇을 위한 조인트 임피던스(joint impedance) 제어와 역기구학(IK)을 함께 구현한 예제입니다.  
+[franka_example_controllers](https://github.com/frankaemika/franka_ros2) 패키지를 기반으로 하며, 7자유도(7-DOF) 로봇(예: Franka Panda)에서 텔레오퍼레이션, 동작 재생, 힘 보상 작업 등에 사용할 수 있습니다.
 
-## Features
+## 주요 기능
 
-- **Joint Impedance Control**: Applies impedance control in joint space using user-configurable stiffness (`k_gains`) and damping (`d_gains`).
-- **Inverse Kinematics Service**: Uses the MoveIt! `/compute_ik` service to convert Cartesian target pose to joint angles.
-- **Teleoperation**: Receives pose and twist commands (e.g., from a haptic device or joystick) for real-time teleop.
-- **Home and Replay Modes**: Supports "Home" button and joint trajectory replay via subscribed topics.
-- **Force-Torque Compensation**: Subscribes to a NetFT sensor, applies gravity and mass compensation, and publishes compensated wrench data.
-- **Service Integration**: Service to notify when the robot reaches the first replay pose (`replay_ready`).
-- **Plug-and-Play with Franka ROS 2 and MoveIt**: Designed for easy integration with existing Franka and MoveIt setups.
+- **조인트 임피던스 제어**: 사용자 지정 강성(`k_gains`) 및 감쇠(`d_gains`) 설정값을 사용해 조인트 공간에서 임피던스 제어를 수행합니다.
+- **역기구학 서비스**: MoveIt!의 `/compute_ik` 서비스를 이용해 목표 카티시안 포즈를 조인트 각도로 변환합니다.
+- **텔레오퍼레이션**: 실시간 텔레오퍼레이션을 위해 하프틱 장치나 조이스틱 등에서 받은 포즈 및 트위스트 명령을 받아 처리합니다.
+- **홈 및 재생 모드**: "Home" 버튼 지원 및 구독한 토픽을 통해 조인트 궤적 재생이 가능합니다.
+- **힘-토크 보상**: NetFT 센서로부터 데이터를 구독하고, 중력 및 질량 보상을 적용하여 보정된 렌치(wrench) 데이터를 퍼블리시합니다.
+- **서비스 연동**: 로봇이 재생(replay) 모드의 첫 번째 자세에 도달했는지 알리는 서비스(`replay_ready`)를 제공합니다.
+- **Franka ROS 2 및 MoveIt과 플러그앤플레이 통합**: 기존 Franka 및 MoveIt 환경과 쉽게 연동할 수 있도록 설계되었습니다.
 
-## Subscribed Topics
+## 구독하는 토픽
 
-- `fd/ee_pose` (`geometry_msgs/PoseStamped`): Desired end-effector pose (usually from teleoperation).
-- `fd/ee_twist` (`geometry_msgs/Twist`): Desired end-effector twist.
-- `fd/button_state` (`std_msgs/Bool`): Teleoperation button input.
-- `home_button` (`std_msgs/Bool`): Home mode button.
-- `replay_jointstate` (`sensor_msgs/JointState`): Joint positions for replay mode.
-- `replay_first_jointstate` (`sensor_msgs/JointState`): First position for replay.
-- `netft_data` (`geometry_msgs/WrenchStamped`): Force-torque sensor data.
+- `fd/ee_pose` (`geometry_msgs/PoseStamped`): 원하는 엔드 이펙터(EE) 포즈 (주로 텔레오퍼레이션에서 사용)
+- `fd/ee_twist` (`geometry_msgs/Twist`): 원하는 엔드 이펙터 트위스트
+- `fd/button_state` (`std_msgs/Bool`): 텔레오퍼레이션 버튼 입력
+- `home_button` (`std_msgs/Bool`): 홈 모드 버튼
+- `replay_jointstate` (`sensor_msgs/JointState`): 재생 모드용 조인트 위치
+- `replay_first_jointstate` (`sensor_msgs/JointState`): 재생 모드의 첫 위치
+- `netft_data` (`geometry_msgs/WrenchStamped`): 힘-토크 센서 데이터
 
-## Published Topics
+## 발행하는 토픽
 
-- `ee_pose` (`geometry_msgs/PoseStamped`): Current end-effector pose.
-- `ee_poset` (`geometry_msgs/PoseStamped`): (Optional) Another pose publisher.
-- `netft_data_compensated` (`geometry_msgs/WrenchStamped`): Gravity- and mass-compensated force-torque data.
+- `ee_pose` (`geometry_msgs/PoseStamped`): 현재 엔드 이펙터 포즈
+- `ee_poset` (`geometry_msgs/PoseStamped`): (옵션) 또 다른 포즈 퍼블리셔
+- `netft_data_compensated` (`geometry_msgs/WrenchStamped`): 중력 및 질량 보정이 적용된 힘-토크 데이터
 
-## Services
+## 서비스
 
-- `replay_ready` (`std_srvs/Trigger`): Reports whether the robot reached the first replay pose.
+- `replay_ready` (`std_srvs/Trigger`): 로봇이 재생 모드의 첫 번째 자세에 도달했는지 여부를 알려줌
 
-## Parameters
+## 파라미터
 
-- `arm_id` (string): Name prefix for the Franka robot, e.g., `panda`.
-- `load_gripper` (bool): Whether a gripper is loaded for IK calculation.
-- `k_gains` (double array): Joint stiffness gains, length = 7.
-- `d_gains` (double array): Joint damping gains, length = 7.
+- `arm_id` (문자열): Franka 로봇의 이름 프리픽스, 예시: `panda`
+- `load_gripper` (불리언): IK 계산 시 그리퍼 장착 여부
+- `k_gains` (실수 배열): 조인트 강성 게인(길이=7)
+- `d_gains` (실수 배열): 조인트 감쇠 게인(길이=7)
 
-## Dependencies
+## 의존성
 
-- ROS 2 (tested on Humble and Rolling)
+- ROS 2 (Humble 및 Rolling에서 테스트됨)
 - [franka_ros2](https://github.com/frankaemika/franka_ros2)
 - [moveit_ros2](https://moveit.ros.org/)
 - [geometry_msgs](https://github.com/ros2/common_interfaces/tree/humble/geometry_msgs)
 - [std_msgs](https://github.com/ros2/common_interfaces/tree/humble/std_msgs)
 - [sensor_msgs](https://github.com/ros2/common_interfaces/tree/humble/sensor_msgs)
 - [std_srvs](https://github.com/ros2/common_interfaces/tree/humble/std_srvs)
+
 
 
 
