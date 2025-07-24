@@ -159,7 +159,7 @@ Vector7d JointImpedanceWithIKExampleController::compute_torque_command(
 
 ## 의존성
 
-- ROS 2 (Humble 및 Rolling에서 테스트됨)
+- ROS 2 
 - [franka_ros2](https://github.com/frankaemika/franka_ros2)
 - [moveit_ros2](https://moveit.ros.org/)
 - [geometry_msgs](https://github.com/ros2/common_interfaces/tree/humble/geometry_msgs)
