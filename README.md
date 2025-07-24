@@ -51,9 +51,75 @@ Vector7d JointImpedanceWithIKExampleController::compute_torque_command(
 
 ```
 - **텔레오퍼레이션**: 실시간 텔레오퍼레이션을 위해 햅틱(Omega 7) 장치에서 받은 포즈 및 트위스트 명령을 받아 처리합니다.
+  Omega 7을 버튼으로 입력을 받아 입력을 받은 시점의 위치를 기억한 후 입력을 받은 시점에서부터 위치에 Remote로봇의 위치뱌를 업데이트 받아 움직입니다.()
+
+  ```
+  `fd/ee_pose` (`geometry_msgs/PoseStamped`): 원하는 엔드 이펙터(EE) 포즈 (주로 텔레오퍼레이션에서 사용)
+  `fd/ee_twist` (`geometry_msgs/Twist`): 원하는 엔드 이펙터 트위스트
+  ```
+  ```
+    if (button_check_ && button_init_ == 0) {
+    // 위치: 이전 누적 오프셋 반영 및 기준점 설정
+    pos_org_ = pos_org_ + cumulative_offset;
+    post_org_ = target_position;  // 초기 기준점 설정
+    
+    // 회전: 이전 누적 회전 오프셋 반영 후, 초기 기준 쿼터니언을 현재 target_orientation으로 설정
+    ori_org_ = RotationToQuaternion(ori_org_ , cumulative_orientation_offset);
+    angt_org_ = target_angle;  // 초기 기준 쿼터니언 설정 (target_angle에서 변환된 값)
+    
+    button_init_ = 1;
+  }
+
+  // -------------------------------
+  // teleoperation 활성 상태에서, 누적 오프셋 업데이트
+  if (button_check_) {
+    // 위치 업데이트
+    Eigen::Vector3d diff_position = (target_position - post_org_) * pos_scale_;
+    Eigen::Vector3d new_position_desired = pos_org_ + diff_position ;
+    final_position = new_position_desired;
+    
+    // 누적 위치 오프셋 갱신
+    cumulative_offset = diff_position;
+    
+    // 회전 업데이트
+    // 현재 teleoperation 입력과 초기 기준(orit_org_) 사이의 상대 회전 계산
+    Eigen::Vector3d angle_diff = (target_angle - angt_org_) * rot_scale_;
+
+    
+    // 새 목표 회전: 초기 기준 회전에 상대 회전을 적용
+    Eigen::Quaterniond new_orientation_desired = RotationToQuaternion(ori_org_ , angle_diff);
+    new_orientation_desired.normalize();  // 정규화 권장
+    final_orientation = new_orientation_desired;
+    orientation_ = final_orientation;
+
+    // 누적 회전 오프셋 갱신 (q_diff를 누적)
+    cumulative_orientation_offset = angle_diff;
+
+    
+  } else {
+    // teleoperation 종료 시, 누적 오프셋 최종 반영
+    if (button_init_ == 1) {
+      pos_org_ = pos_org_ + cumulative_offset;
+      cumulative_offset.setZero();
+      
+      ori_org_ = RotationToQuaternion(ori_org_ , cumulative_orientation_offset);
+      ori_org_.normalize();
+      
+      cumulative_orientation_offset.setZero();
+      
+      button_init_ = 0;
+    }
+    final_position = pos_org_;
+    final_orientation = ori_org_;
+    orientation_ = final_orientation;
+
+  }
+
+  ```
+
 - **힘-토크 보상**: NetFT 센서로부터 데이터를 구독하고, 중력 및 질량 보상을 적용하여 보정된 렌치(wrench) 데이터를 퍼블리시합니다.
 ```
-netFTCallback
+'netFTCallback' 다음 함수 참고 
 ```
 - **주요 홈 및 재생 모드**: "Home" 버튼 지원 및 구독한 토픽을 통해 조인트 궤적 재생이 가능합니다.
 ```
