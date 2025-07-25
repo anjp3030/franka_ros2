@@ -1,6 +1,6 @@
 # JointImpedanceWithIKExampleController
 
-[franka_example_controllers](https://github.com/frankaemika/franka_ros2) 패키지를 기반으로 하며, 7자유도(7-DOF) 로봇(예: Franka Panda)에서 텔레오퍼레이션, 동작 재생, 힘 보상 작업 등에 사용할 수 있습니다.
+[franka_example_controllers](https://github.com/frankaemika/franka_ros2) 패키지를 기반으로 하며, Franka Fr3 로봇과 Omega7을 이용한 텔레오퍼레이션, GUI를 통한 Teach/Replay, 힘 보상 및 데이터 저장 기능 등이 있습니다..
 ```
 franka_ros2/franka_example_controllers/src/joint_impedance_with_ik_example_controller.cpp
 ````
@@ -10,8 +10,8 @@ franka_ros2/franka_example_controllers/src/joint_impedance_with_ik_example_contr
 ```
 franka_ros2/franka_bringup/config/controllers.yaml
 ```
-다음 파일에서 각 조인트에 대한 k_gain 과 d_gain을 수정할 수 
-```
+다음 파일에서 각 조인트에 대한 k_gain 과 d_gain을 수정할 수 있습니다.
+```bash
 joint_impedance_with_ik_example_controller:
   ros__parameters:
     k_gains:
@@ -32,7 +32,7 @@ joint_impedance_with_ik_example_controller:
       - 5.
 ```
 - **IK Solver**: MoveIt!의 `/compute_ik` 서비스를 이용해 목표 카티시안 포즈를 조인트 각도로 변환합니다.변환된 조인트 각도는 다음 함수를 통해 토크로 변환됩니다.
-```
+```bash
 Vector7d JointImpedanceWithIKExampleController::compute_torque_command(
     const Vector7d& joint_positions_desired,
     const Vector7d& joint_positions_current,
@@ -51,13 +51,14 @@ Vector7d JointImpedanceWithIKExampleController::compute_torque_command(
 
 ```
 - **Teleoperation**: 실시간 텔레오퍼레이션을 위해 햅틱(Omega 7) 장치에서 받은 포즈 및 트위스트 명령을 받아 처리합니다.
-  Omega 7을 버튼으로 입력을 받아 입력을 받은 시점의 위치를 기억한 후 입력을 받은 시점에서부터 위치에 Remote로봇의 위치뱌를 업데이트 받아 움직입니다.()
+  Omega 7을 버튼으로 입력을 받아 입력을 받은 시점의 위치를 기억한 후 입력을 받은 시점에서부터 위치에 Remote로봇의 위치를 업데이트 받아 움직입니다.()
 
-  ```
+  ```bash
   `fd/ee_pose` (`geometry_msgs/PoseStamped`): 원하는 엔드 이펙터(EE) 포즈 (주로 텔레오퍼레이션에서 사용)
   `fd/ee_twist` (`geometry_msgs/Twist`): 원하는 엔드 이펙터 트위스트
   ```
-  ```
+  
+  ```bash
     if (button_check_ && button_init_ == 0) {
     // 위치: 이전 누적 오프셋 반영 및 기준점 설정
     pos_org_ = pos_org_ + cumulative_offset;
@@ -118,23 +119,19 @@ Vector7d JointImpedanceWithIKExampleController::compute_torque_command(
   ```
 
 - **힘-토크 보상**: NetFT 센서로부터 데이터를 구독하고, 중력 및 질량 보상을 적용하여 보정된 렌치(wrench) 데이터를 퍼블리시합니다.
+```bash
+'netFTCallback' 함수 참고 
 ```
-'netFTCallback' 다음 함수 참고 
-```
-- **주요 홈 및 재생 모드**: "Home" 버튼 지원 및 구독한 토픽을 통해 조인트 궤적 재생이 가능합니다.
-```
+- **주요 홈 및 재생 모드**: GUI에서 "Home" 버튼 클릭시 정해진 Joint Goal(Home position)로 이동합니다.(설정된 시간에 current position 과 goal position을 보간하여 이동합니다.)
+```bash
 `home_button` (`std_msgs/Bool`)
 ```
 홈 모드 버튼을 누르면 홈으로 움직입니다.
-```
-`replay_first_jointstate` (`sensor_msgs/JointState`)
-```
- replay를 하기 위해 첫 위치로 움직인 후 service를 응답하여 Gui에서 나머지 위치를 구독하게 합니다. 
-
-```
+```bash
+`replay_first_jointstate` (`sensor_msgs/JointState`) 
 `replay_jointstate` (`sensor_msgs/JointState`)
 ```
-나머지 jointstate를 받아 replay를 실행합니다. 
+ replay를 하기 위해 첫 위치로 움직인 후 service를 응답하여 GUI에서 나머지 위치 데이터를 받아와 reaply를 진행하게 됩니다.(첫번째 경로로 이동은 home과 동일) 
 
 ## 구독하는 토픽
 
@@ -154,7 +151,7 @@ Vector7d JointImpedanceWithIKExampleController::compute_torque_command(
 
 ## 서비스
 
-- `replay_ready` (`std_srvs/Trigger`): 로봇이 재생 모드의 첫 번째 자세에 도달했는지 여부를 알려줌
+- `replay_ready` (`std_srvs/Trigger`): 로봇이 재생 모드의 첫 번째 자세에 도달했는지 여부 확인
 
 
 ## 의존성
