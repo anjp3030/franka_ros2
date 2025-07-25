@@ -31,7 +31,7 @@ joint_impedance_with_ik_example_controller:
       - 10.0
       - 5.
 ```
-- **역기구학 서비스**: MoveIt!의 `/compute_ik` 서비스를 이용해 목표 카티시안 포즈를 조인트 각도로 변환합니다.변환된 조인트 각도는 다음 함수를 통해 토크로 변환됩니다.
+- **IK Solver**: MoveIt!의 `/compute_ik` 서비스를 이용해 목표 카티시안 포즈를 조인트 각도로 변환합니다.변환된 조인트 각도는 다음 함수를 통해 토크로 변환됩니다.
 ```
 Vector7d JointImpedanceWithIKExampleController::compute_torque_command(
     const Vector7d& joint_positions_desired,
@@ -50,7 +50,7 @@ Vector7d JointImpedanceWithIKExampleController::compute_torque_command(
 }
 
 ```
-- **텔레오퍼레이션**: 실시간 텔레오퍼레이션을 위해 햅틱(Omega 7) 장치에서 받은 포즈 및 트위스트 명령을 받아 처리합니다.
+- **Teleoperation**: 실시간 텔레오퍼레이션을 위해 햅틱(Omega 7) 장치에서 받은 포즈 및 트위스트 명령을 받아 처리합니다.
   Omega 7을 버튼으로 입력을 받아 입력을 받은 시점의 위치를 기억한 후 입력을 받은 시점에서부터 위치에 Remote로봇의 위치뱌를 업데이트 받아 움직입니다.()
 
   ```
