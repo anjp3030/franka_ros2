@@ -1,54 +1,169 @@
 # JointImpedanceWithIKExampleController
 
-This ROS 2 controller implements joint impedance control with inverse kinematics (IK) for Franka Emika robots.  
-It is based on the [franka_example_controllers](https://github.com/frankaemika/franka_ros2) package and can be used for teleoperation, replay, and force-compensated tasks with 7-DOF robots (e.g., Franka Panda).
+[franka_example_controllers](https://github.com/frankaemika/franka_ros2) 패키지를 기반으로 하며, Franka Fr3 로봇과 Omega7을 이용한 텔레오퍼레이션, GUI를 통한 Teach/Replay, 힘 보상 및 데이터 저장 기능 등이 있습니다..
+```
+franka_ros2/franka_example_controllers/src/joint_impedance_with_ik_example_controller.cpp
+````
+## 주요 기능
 
-## Features
+- **조인트 임피던스 제어**: 사용자 지정 강성(`k_gains`) 및 감쇠(`d_gains`) 설정값을 사용해 조인트 공간에서 임피던스 제어를 수행합니다.
+```
+franka_ros2/franka_bringup/config/controllers.yaml
+```
+다음 파일에서 각 조인트에 대한 k_gain 과 d_gain을 수정할 수 있습니다.
+```bash
+joint_impedance_with_ik_example_controller:
+  ros__parameters:
+    k_gains:
+      - 600.0
+      - 600.0
+      - 600.0
+      - 600.0
+      - 250.0
+      - 150.0
+      - 50.0
+    d_gains:
+      - 30.0
+      - 30.0
+      - 30.0
+      - 30.0
+      - 10.0
+      - 10.0
+      - 5.
+```
+- **IK Solver**: MoveIt!의 `/compute_ik` 서비스를 이용해 목표 카티시안 포즈를 조인트 각도로 변환합니다.변환된 조인트 각도는 다음 함수를 통해 토크로 변환됩니다.
+```bash
+Vector7d JointImpedanceWithIKExampleController::compute_torque_command(
+    const Vector7d& joint_positions_desired,
+    const Vector7d& joint_positions_current,
+    const Vector7d& joint_velocities_current) {
+  std::array<double, 7> coriolis_array = franka_robot_model_->getCoriolisForceVector();
+  Vector7d coriolis(coriolis_array.data());
 
-- **Joint Impedance Control**: Applies impedance control in joint space using user-configurable stiffness (`k_gains`) and damping (`d_gains`).
-- **Inverse Kinematics Service**: Uses the MoveIt! `/compute_ik` service to convert Cartesian target pose to joint angles.
-- **Teleoperation**: Receives pose and twist commands (e.g., from a haptic device or joystick) for real-time teleop.
-- **Home and Replay Modes**: Supports "Home" button and joint trajectory replay via subscribed topics.
-- **Force-Torque Compensation**: Subscribes to a NetFT sensor, applies gravity and mass compensation, and publishes compensated wrench data.
-- **Service Integration**: Service to notify when the robot reaches the first replay pose (`replay_ready`).
-- **Plug-and-Play with Franka ROS 2 and MoveIt**: Designed for easy integration with existing Franka and MoveIt setups.
+  const double kAlpha = 0.99;
+  dq_filtered_ = (1 - kAlpha) * dq_filtered_ + kAlpha * joint_velocities_current;
+  Vector7d q_error = joint_positions_desired - joint_positions_current;
+  Vector7d tau_d_calculated = 
+      k_gains_.cwiseProduct(q_error) - d_gains_.cwiseProduct(dq_filtered_) + coriolis;
 
-## Subscribed Topics
+  return tau_d_calculated;
+}
 
-- `fd/ee_pose` (`geometry_msgs/PoseStamped`): Desired end-effector pose (usually from teleoperation).
-- `fd/ee_twist` (`geometry_msgs/Twist`): Desired end-effector twist.
-- `fd/button_state` (`std_msgs/Bool`): Teleoperation button input.
-- `home_button` (`std_msgs/Bool`): Home mode button.
-- `replay_jointstate` (`sensor_msgs/JointState`): Joint positions for replay mode.
-- `replay_first_jointstate` (`sensor_msgs/JointState`): First position for replay.
-- `netft_data` (`geometry_msgs/WrenchStamped`): Force-torque sensor data.
+```
+- **Teleoperation**: 실시간 텔레오퍼레이션을 위해 햅틱(Omega 7) 장치에서 받은 포즈 및 트위스트 명령을 받아 처리합니다.
+  Omega 7을 버튼으로 입력을 받아 입력을 받은 시점의 위치를 기억한 후 입력을 받은 시점에서부터 위치에 Remote로봇의 위치를 업데이트 받아 움직입니다.()
 
-## Published Topics
+  ```bash
+  `fd/ee_pose` (`geometry_msgs/PoseStamped`): 원하는 엔드 이펙터(EE) 포즈 (주로 텔레오퍼레이션에서 사용)
+  `fd/ee_twist` (`geometry_msgs/Twist`): 원하는 엔드 이펙터 트위스트
+  ```
+  
+  ```bash
+    if (button_check_ && button_init_ == 0) {
+    // 위치: 이전 누적 오프셋 반영 및 기준점 설정
+    pos_org_ = pos_org_ + cumulative_offset;
+    post_org_ = target_position;  // 초기 기준점 설정
+    
+    // 회전: 이전 누적 회전 오프셋 반영 후, 초기 기준 쿼터니언을 현재 target_orientation으로 설정
+    ori_org_ = RotationToQuaternion(ori_org_ , cumulative_orientation_offset);
+    angt_org_ = target_angle;  // 초기 기준 쿼터니언 설정 (target_angle에서 변환된 값)
+    
+    button_init_ = 1;
+  }
 
-- `ee_pose` (`geometry_msgs/PoseStamped`): Current end-effector pose.
-- `ee_poset` (`geometry_msgs/PoseStamped`): (Optional) Another pose publisher.
-- `netft_data_compensated` (`geometry_msgs/WrenchStamped`): Gravity- and mass-compensated force-torque data.
+  // -------------------------------
+  // teleoperation 활성 상태에서, 누적 오프셋 업데이트
+  if (button_check_) {
+    // 위치 업데이트
+    Eigen::Vector3d diff_position = (target_position - post_org_) * pos_scale_;
+    Eigen::Vector3d new_position_desired = pos_org_ + diff_position ;
+    final_position = new_position_desired;
+    
+    // 누적 위치 오프셋 갱신
+    cumulative_offset = diff_position;
+    
+    // 회전 업데이트
+    // 현재 teleoperation 입력과 초기 기준(orit_org_) 사이의 상대 회전 계산
+    Eigen::Vector3d angle_diff = (target_angle - angt_org_) * rot_scale_;
 
-## Services
+    
+    // 새 목표 회전: 초기 기준 회전에 상대 회전을 적용
+    Eigen::Quaterniond new_orientation_desired = RotationToQuaternion(ori_org_ , angle_diff);
+    new_orientation_desired.normalize();  // 정규화 권장
+    final_orientation = new_orientation_desired;
+    orientation_ = final_orientation;
 
-- `replay_ready` (`std_srvs/Trigger`): Reports whether the robot reached the first replay pose.
+    // 누적 회전 오프셋 갱신 (q_diff를 누적)
+    cumulative_orientation_offset = angle_diff;
 
-## Parameters
+    
+  } else {
+    // teleoperation 종료 시, 누적 오프셋 최종 반영
+    if (button_init_ == 1) {
+      pos_org_ = pos_org_ + cumulative_offset;
+      cumulative_offset.setZero();
+      
+      ori_org_ = RotationToQuaternion(ori_org_ , cumulative_orientation_offset);
+      ori_org_.normalize();
+      
+      cumulative_orientation_offset.setZero();
+      
+      button_init_ = 0;
+    }
+    final_position = pos_org_;
+    final_orientation = ori_org_;
+    orientation_ = final_orientation;
 
-- `arm_id` (string): Name prefix for the Franka robot, e.g., `panda`.
-- `load_gripper` (bool): Whether a gripper is loaded for IK calculation.
-- `k_gains` (double array): Joint stiffness gains, length = 7.
-- `d_gains` (double array): Joint damping gains, length = 7.
+  }
 
-## Dependencies
+  ```
 
-- ROS 2 (tested on Humble and Rolling)
+- **힘-토크 보상**: NetFT 센서로부터 데이터를 구독하고, 중력 및 질량 보상을 적용하여 보정된 렌치(wrench) 데이터를 퍼블리시합니다.
+```bash
+'netFTCallback' 함수 참고 
+```
+- **주요 홈 및 재생 모드**: GUI에서 "Home" 버튼 클릭시 정해진 Joint Goal(Home position)로 이동합니다.(설정된 시간에 current position 과 goal position을 보간하여 이동합니다.)
+```bash
+`home_button` (`std_msgs/Bool`)
+```
+홈 모드 버튼을 누르면 홈으로 움직입니다.
+```bash
+`replay_first_jointstate` (`sensor_msgs/JointState`) 
+`replay_jointstate` (`sensor_msgs/JointState`)
+```
+ replay를 하기 위해 첫 위치로 움직인 후 service를 응답하여 GUI에서 나머지 위치 데이터를 받아와 reaply를 진행하게 됩니다.(첫번째 경로로 이동은 home과 동일) 
+
+## 구독하는 토픽
+
+- `fd/ee_pose` (`geometry_msgs/PoseStamped`): 원하는 엔드 이펙터(EE) 포즈 (주로 텔레오퍼레이션에서 사용)
+- `fd/ee_twist` (`geometry_msgs/Twist`): 원하는 엔드 이펙터 트위스트
+- `fd/button_state` (`std_msgs/Bool`): 텔레오퍼레이션 버튼 입력
+- `home_button` (`std_msgs/Bool`): 홈 모드 버튼
+- `replay_jointstate` (`sensor_msgs/JointState`): 재생 모드용 조인트 위치
+- `replay_first_jointstate` (`sensor_msgs/JointState`): 재생 모드의 첫 위치
+- `netft_data` (`geometry_msgs/WrenchStamped`): 힘-토크 센서 데이터
+
+## 발행하는 토픽
+
+- `ee_pose` (`geometry_msgs/PoseStamped`): 현재 엔드 이펙터 포즈
+- `ee_poset` (`geometry_msgs/PoseStamped`): (옵션) 또 다른 포즈 퍼블리셔
+- `netft_data_compensated` (`geometry_msgs/WrenchStamped`): 중력 및 질량 보정이 적용된 힘-토크 데이터
+
+## 서비스
+
+- `replay_ready` (`std_srvs/Trigger`): 로봇이 재생 모드의 첫 번째 자세에 도달했는지 여부 확인
+
+
+## 의존성
+
+- ROS 2 
 - [franka_ros2](https://github.com/frankaemika/franka_ros2)
 - [moveit_ros2](https://moveit.ros.org/)
 - [geometry_msgs](https://github.com/ros2/common_interfaces/tree/humble/geometry_msgs)
 - [std_msgs](https://github.com/ros2/common_interfaces/tree/humble/std_msgs)
 - [sensor_msgs](https://github.com/ros2/common_interfaces/tree/humble/sensor_msgs)
 - [std_srvs](https://github.com/ros2/common_interfaces/tree/humble/std_srvs)
+
 
 
 
