@@ -423,8 +423,7 @@ controller_interface::return_type JointImpedanceWithIKExampleController::update(
     // 누적 회전 오프셋 갱신 (q_diff를 누적)
     cumulative_orientation_offset = angle_diff;
 
-    // (매 사이클 기준 쿼터니언(orit_org_)을 갱신하고 싶다면 아래 주석 해제)
-    // orit_org_ = target_orientation;
+    
   } else {
     // teleoperation 종료 시, 누적 오프셋 최종 반영
     if (button_init_ == 1) {
@@ -444,6 +443,19 @@ controller_interface::return_type JointImpedanceWithIKExampleController::update(
 
   }
 
+  geometry_msgs::msg::PoseStamped pose_msg;
+  // Position
+  pose_msg.pose.position.x = final_position.x();
+  pose_msg.pose.position.y = final_position.y();
+  pose_msg.pose.position.z = final_position.z();
+  // Orientation (Eigen::Quaterniond 가정)
+  pose_msg.pose.orientation.x = final_orientation.x();
+  pose_msg.pose.orientation.y = final_orientation.y();
+  pose_msg.pose.orientation.z = final_orientation.z();
+  pose_msg.pose.orientation.w = final_orientation.w();
+
+  // Publish
+  desired_pos_pub_->publish(pose_msg);
 
 
   auto service_request =
@@ -596,7 +608,9 @@ CallbackReturn JointImpedanceWithIKExampleController::on_configure(
       "ee_poset", rclcpp::SystemDefaultsQoS());
           
  
-  
+  desired_pos_pub_ = 
+    get_node()->create_publisher<geometry_msgs::msg::PoseStamped>(
+        "/desired_pose", rclcpp::SystemDefaultsQoS());
 
   // 2) 보상된 Wrench 퍼블리셔
   netft_comp_pub_ =

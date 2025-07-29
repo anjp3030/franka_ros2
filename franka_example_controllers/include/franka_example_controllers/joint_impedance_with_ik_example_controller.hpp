@@ -201,6 +201,8 @@ class JointImpedanceWithIKExampleController : public controller_interface::Contr
   Eigen::Vector3d cumulative_orientation_offset = Eigen::Vector3d::Zero();
   // ramp up이 진행 중일 때 쓰일 현재 ramp ratio
   double ramp_ratio_{0.0};
+  
+  //Subscriber
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr omegaButton_sub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr home_button_sub_;
 
@@ -215,6 +217,8 @@ class JointImpedanceWithIKExampleController : public controller_interface::Contr
   rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr ee_pose_pub_;
   rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr ee_poset_pub_;
   rclcpp::Publisher<geometry_msgs::msg::WrenchStamped>::SharedPtr netft_comp_pub_;
+  rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr desired_pos_pub_;
+  
 
 
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr replay_ready_service_;
